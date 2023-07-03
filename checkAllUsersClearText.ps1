@@ -1,6 +1,9 @@
-﻿#features to add: blank out or obviscate pwd vs clear-text; also verbose mode vs just the facts
+﻿#features to add: blank out or obfuscate pwd vs clear-text; also verbose mode vs just the facts
 #modulize this
-function GP-Info{
+
+#Requires -Modules DSInternals
+
+function Get-DDPPInfo{
     Param (
         [string]$verbose
     )
@@ -16,7 +19,7 @@ function GP-Info{
     }
 }
 
-function FGPP-Info{
+function Get-FGPPInfo{
     Param (
         [string]$verbose
     )
@@ -34,37 +37,35 @@ function FGPP-Info{
     }
 
     if ($verbose){
-        $FGPPData | ft -Property name, whenChanged, ReversibleEncryptionEnabled, AppliesTo
+        $FGPPData | Format-Table -Property name, whenChanged, ReversibleEncryptionEnabled, AppliesTo
     }
 }
-function User-Info{
+function Get-UserInfo{
     Param (
         [string]$verbose
     )
-    $allusers = Get-ADUser -Filter * -Properties whenChanged, PasswordLastSet, PasswordNeverExpires, AllowReversiblePasswordEncryption
-    $reverseUsers = $allusers | where {$_.AllowReversiblePasswordEncryption -eq $true}
-    Write-Host "Number of users directly configured to allow reverse encryption: " $reverseUsers.count
+    $AllUsers = Get-ADUser -Filter * -Properties whenChanged, PasswordLastSet, PasswordNeverExpires, AllowReversiblePasswordEncryption
+    $ReverseUsers = $AllUsers | Where-Object {$_.AllowReversiblePasswordEncryption -eq $true}
+    Write-Host "Number of users directly configured to allow reverse encryption: " $ReverseUsers.count
     if ($verbose){
         Write-Host "Domain Users with Reverse Encryption Enabled via UAC:"
-        $reverseUsers | ft name, whenChanged, PasswordLastSet, PasswordNeverExpires
+        $reverseUsers | Format-Table name, whenChanged, PasswordLastSet, PasswordNeverExpires
     }
-    foreach ($i in $allusers){
-        $replUser = Get-ADReplAccount -SamAccountName $i.samaccountname -Server localhost 
+    foreach ($user in $AllUsers){
+        $repluser = Get-ADReplAccount -SamAccountName $i.samaccountname -Server localhost 
         $policy = Get-ADUserResultantPasswordPolicy -Identity $i
-        $password = $replUser.SupplementalCredentials
-        #Only report on accounts that have a Clear-Text password
-        if($password.ClearText -ne $null){
+        $password = $repluser.SupplementalCredentials
+        #Only report on accounts that have a ClearText password
+        if($null -ne $password.ClearText){
             Write-Host $i.SamAccountName "has a clear-text password."
             #Attempt to determine why a Clear-Text password is set
             if ($i.AllowReversiblePasswordEncryption){
                 Write-Host "UAC is configured on this account to directly allow reverse encryption."
                 Write-Host "Remove the check-box on this account and change the account password."
-            }
-            elseif ($policy.ReversibleEncryptionEnabled){
+            } elseif ($policy.ReversibleEncryptionEnabled){
                 Write-Host "The " $policy.Name "FGPP is enforced on this account which allows reverse encryption."
                 Write-Host "Remove this policy or disable reversible encryption and change the account password." 
-            }
-            else{
+            } else {
                 Write-Host "Nothing is currently enforcing reverse encryption. A prior setting or policy must have allowed this configuration."
                 Write-Host "Change the account password."
             }
@@ -73,11 +74,10 @@ function User-Info{
                 Write-Host "Clear Text Password:" $password.ClearText
                 Write-Host "User account control:" $replUser.useraccountcontrol
                 Write-Host "AD Attributes for user object:"
-                $i | fl samaccountname, whenChanged, PasswordLastSet, PasswordNeverExpires, AllowReversiblePasswordEncryption
+                $i | Format-List samaccountname, whenChanged, PasswordLastSet, PasswordNeverExpires, AllowReversiblePasswordEncryption
                 Write-Host "FGPP applied to this account: "
                 $policy
             }
-
         }
     }
 }
@@ -102,9 +102,9 @@ else{
 # can't find the right key yet.
 #FGPP
 Write-Host "Fine Grained Password Policy Data:"
-Get-ADFineGrainedPasswordPolicy -Filter * -Properties whenChanged | ft -Property name, whenChanged, ReversibleEncryptionEnabled, AppliesTo
+Get-ADFineGrainedPasswordPolicy -Filter * -Properties whenChanged | Format-Table -Property name, whenChanged, ReversibleEncryptionEnabled, AppliesTo
 #Domain Users
-$reverseUsers = $allusers | where {$_.AllowReversiblePasswordEncryption -eq $true}
+$reverseUsers = $allusers | Where-Object {$_.AllowReversiblePasswordEncryption -eq $true}
 Write-Host "Number of users directly configured to allow reverse encryption: " $reverseUsers.count
 
 foreach ($i in $allusers){
@@ -113,11 +113,11 @@ foreach ($i in $allusers){
  
  #write-host "checking" $i.samaccountname "(" $i.name ")"
  $password = $temp.SupplementalCredentials
- if($password.ClearText -ne $null){
+ if($null -ne $password.ClearText){
     Write-Host "There be a clear text pwd in here"
     $password.ClearText
     $temp.useraccountcontrol
-    $i | fl samaccountname, whenChanged, PasswordLastSet, PasswordNeverExpires, AllowReversiblePasswordEncryption
+    $i | Format-List samaccountname, whenChanged, PasswordLastSet, PasswordNeverExpires, AllowReversiblePasswordEncryption
     Write-Host "FGPP applied & Reverse Encryption is:"
     $policy.Name
     $policy.ReversibleEncryptionEnabled
