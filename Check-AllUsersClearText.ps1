@@ -1,24 +1,43 @@
-﻿#features to add: blank out or obfuscate pwd vs clear-text; also verbose mode vs just the facts
-#modulize this
+<#.
+SCRIPTNAME: Check-AllUsersClearText.ps1
+AUTHOR: Brandon Colley
+AUTHOR EMAIL: Brandon.Colley@trimarcsecurity.com
+DESCRIPTION:
+This script identifies all accounts in a domain utilizing clear-text passwords via the "Store Password using Reversible Encryption".
+It reports on current state of the environment, identifying GPO, FGPP, and UAC settings that configure Reversible Encryption.
 
+https://github.com/MichaelGrafnetter/DSInternals
 #Requires -Modules DSInternals
+#>
 
+#Variable passed to functions that require domain user information.
+$AllUsers = Get-ADUser -Filter * -Properties whenChanged, PasswordLastSet, PasswordNeverExpires, AllowReversiblePasswordEncryption
+
+#Checks the Default Domain Password Policy GPO for password configuration that enables Reversible Encryption domain-wide.
 function Get-DDPPInfo{
     Param (
         [string]$verbose
     )
-    Write-Host "Domain GPO Information:"
+    #Export the Default Domain Policy GPO, injest into xml object to retrieve Modified timestamp and Password Policy data
+    Get-GPOReport -Name "Default Domain Policy" -ReportType xml -Path DDPP.xml
+    $temp = Get-Content .\DDPP.xml
+    $xml = [xml]$temp
+    Remove-Item .\DDPP.xml
+        
+    Write-Host "Default Domain GPO Password Policy Information:"
     if ((Get-ADDefaultDomainPasswordPolicy).ReversibleEncryptionEnabled -eq $true){
         Write-Host "Critical: Reverse Encryption is enabled Domain Wide. This impacts all users regardless of FGPP or UAC."
-    }
+            }
     else{
         Write-Host "Reverse Encryption is properly disabled in Domain Password Policy"
     }
+    Write-Host "Default Domain Policy GPO was last Modified: " $xml.gpo.ModifiedTime
     if ($verbose){
         Get-ADDefaultDomainPasswordPolicy
     }
 }
 
+#Checks all Fine-Grained Password Policies for password configuration that enables Reversible Encryption applied to user accounts or groups.
 function Get-FGPPInfo{
     Param (
         [string]$verbose
@@ -40,19 +59,34 @@ function Get-FGPPInfo{
         $FGPPData | Format-Table -Property name, whenChanged, ReversibleEncryptionEnabled, AppliesTo
     }
 }
-function Get-UserInfo{
+
+#Counts the number of users directly configured to allow Reversible Encryption.
+function Get-RevEncryptUserInfo{
     Param (
         [string]$verbose
+        $userObjects
     )
-    $AllUsers = Get-ADUser -Filter * -Properties whenChanged, PasswordLastSet, PasswordNeverExpires, AllowReversiblePasswordEncryption
+    
     $ReverseUsers = $AllUsers | Where-Object {$_.AllowReversiblePasswordEncryption -eq $true}
     Write-Host "Number of users directly configured to allow reverse encryption: " $ReverseUsers.count
     if ($verbose){
         Write-Host "Domain Users with Reverse Encryption Enabled via UAC:"
         $reverseUsers | Format-Table name, whenChanged, PasswordLastSet, PasswordNeverExpires
     }
-    foreach ($user in $AllUsers){
-        $repluser = Get-ADReplAccount -SamAccountName $i.samaccountname -Server localhost 
+}
+
+#Uses DSInternals cmdlet "Get-ADReplAccount" to check all user accounts with a clear-text password.
+#Each account identified is reported along with information regarding how Reversible Encryption has been set on the account.
+#WARNING: Verbose mode will display the clear-text password to the screen
+function Get-ClearTextUserInfo{
+    Param (
+        [string]$verbose
+        [string]$DChostname
+        $userObjects
+    }
+    
+    ForEach-Object ($user in $AllUsers){
+        $repluser = Get-ADReplAccount -SamAccountName $i.samaccountname -Server $DChostname 
         $policy = Get-ADUserResultantPasswordPolicy -Identity $i
         $password = $repluser.SupplementalCredentials
         #Only report on accounts that have a ClearText password
@@ -82,53 +116,14 @@ function Get-UserInfo{
     }
 }
 
+#### Set the variables
+$verboseMode = $false #Change this to true to globally enable verbose mode
+$DChostname = localhost #Change this if not running directly on DC
 
-######################################
+#### Call the functions
+Get-DDPPInfo -verbose $verboseMode
+Get-FGPPInfo -verbose $verboseMode
+Get-RevEncryptUserInfo -verbose $verboseMode
+Get-ClearTextUserInfo -verbose $verboseMode -DChostname $DChostname
 
-$allusers = Get-ADUser -Filter * -Properties whenChanged, PasswordLastSet, PasswordNeverExpires, AllowReversiblePasswordEncryption
-Write-Host "Domain Information:"
-#GPO
-if ((Get-ADDefaultDomainPasswordPolicy).ReversibleEncryptionEnabled -eq $true){
-    Write-Host "Bad Default Domain Password Policy Bro"
-}
-else{
-    Write-Host "This is fine..."
-}
-#$path = "C:\Users\Administrator\Desktop\gpo.xml"
-#Get-GPOReport -ReportType Xml -Name "Default Domain Policy" -Path $path
-#$xml = Import-Clixml $path #####This doesn't work yet.
-# $gpo = Get-GPO -Name "Default Domain Policy"
-# Get-GPRegistryValue -Guid $gpo.id
-# can't find the right key yet.
-#FGPP
-Write-Host "Fine Grained Password Policy Data:"
-Get-ADFineGrainedPasswordPolicy -Filter * -Properties whenChanged | Format-Table -Property name, whenChanged, ReversibleEncryptionEnabled, AppliesTo
-#Domain Users
-$reverseUsers = $allusers | Where-Object {$_.AllowReversiblePasswordEncryption -eq $true}
-Write-Host "Number of users directly configured to allow reverse encryption: " $reverseUsers.count
-
-foreach ($i in $allusers){
- $temp = Get-ADReplAccount -SamAccountName $i.samaccountname -Server localhost 
- $policy = Get-ADUserResultantPasswordPolicy -Identity $i
- 
- #write-host "checking" $i.samaccountname "(" $i.name ")"
- $password = $temp.SupplementalCredentials
- if($null -ne $password.ClearText){
-    Write-Host "There be a clear text pwd in here"
-    $password.ClearText
-    $temp.useraccountcontrol
-    $i | Format-List samaccountname, whenChanged, PasswordLastSet, PasswordNeverExpires, AllowReversiblePasswordEncryption
-    Write-Host "FGPP applied & Reverse Encryption is:"
-    $policy.Name
-    $policy.ReversibleEncryptionEnabled
-    }
- else{
-    #Write-Host "Properly encrypted password"
-    }
-}
-
-##Figure out how to cast this as XML to pull out the value for the setting as well as modified date of GPO
-##Get-GPOReport -ReportType Xml -Name "Default Domain Policy"
-##<q1:Name>ClearTextPassword</q1:Name>
-   ##       <q1:SettingBoolean>false</q1:SettingBoolean>
-  ##        <q1:Type>Password</q1:Type>
+#Fin
