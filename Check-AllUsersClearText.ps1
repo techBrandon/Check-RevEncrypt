@@ -18,21 +18,22 @@ function Get-DDPPInfo{
     Param (
         [string]$verbose
     )
+    Write-Host "`nDefault Domain GPO Password Policy Information:" -BackgroundColor Gray
     #Export the Default Domain Policy GPO, injest into xml object to retrieve Modified timestamp and Password Policy data
     Get-GPOReport -Name "Default Domain Policy" -ReportType xml -Path DDPP.xml
     $temp = Get-Content .\DDPP.xml
     $xml = [xml]$temp
     Remove-Item .\DDPP.xml
         
-    Write-Host "Default Domain GPO Password Policy Information:"
     if ((Get-ADDefaultDomainPasswordPolicy).ReversibleEncryptionEnabled -eq $true){
-        Write-Host "Critical: Reverse Encryption is enabled Domain Wide. This impacts all users regardless of FGPP or UAC."
+        Write-Host "Critical: Reverse Encryption is enabled Domain Wide. This impacts all users regardless of FGPP or UAC." -ForegroundColor Red
             }
     else{
-        Write-Host "Reverse Encryption is properly disabled in Domain Password Policy"
+        Write-Host "Reverse Encryption is properly disabled in Domain Password Policy" -ForegroundColor Green
     }
     Write-Host "Default Domain Policy GPO was last Modified: " $xml.gpo.ModifiedTime
     if ($verbose){
+        Write-Host "`n****Verbose Mode Enabled****`n"
         Get-ADDefaultDomainPasswordPolicy
     }
 }
@@ -42,20 +43,21 @@ function Get-FGPPInfo{
     Param (
         [string]$verbose
     )
-    Write-Host "FGPP Information:"
+    Write-Host "`nFine-Grained Password Policy Information:" -BackgroundColor Gray
     $FGPPData = Get-ADFineGrainedPasswordPolicy -Filter * -Properties whenChanged
     $FGPPFound = $false
     foreach ($i in $FGPPData){
         if ($i.ReversibleEncryptionEnabled){
             $FGPPFound = $true
-            Write-Host $i.Name "Enables Reverse Encryption on: " $i.AppliesTo
+            Write-Host "The Policy: " $i.Name "Enables Reverse Encryption on: " $i.AppliesTo -ForegroundColor Red
         }
     }
     if (!$FGPPFound){
-        Write-Host "Reverse Encryption is properly disabled in All Fine-Grained Password Policies"
+        Write-Host "Reverse Encryption is properly disabled in All Fine-Grained Password Policies" -ForegroundColor Green
     }
 
     if ($verbose){
+        Write-Host "`n****Verbose Mode Enabled****`n"
         $FGPPData | Format-Table -Property name, whenChanged, ReversibleEncryptionEnabled, AppliesTo
     }
 }
@@ -64,13 +66,13 @@ function Get-FGPPInfo{
 function Get-RevEncryptUserInfo{
     Param (
         [string]$verbose
-        $userObjects
     )
-    
+    Write-Host "`nGathering User Account Data:" -BackgroundColor Gray
     $ReverseUsers = $AllUsers | Where-Object {$_.AllowReversiblePasswordEncryption -eq $true}
     Write-Host "Number of users directly configured to allow reverse encryption: " $ReverseUsers.count
     if ($verbose){
-        Write-Host "Domain Users with Reverse Encryption Enabled via UAC:"
+        Write-Host "`n****Verbose Mode Enabled****`n"
+        Write-Host "Domain Users with Reverse Encryption Enabled via UAC:" -ForegroundColor Red
         $reverseUsers | Format-Table name, whenChanged, PasswordLastSet, PasswordNeverExpires
     }
 }
@@ -80,20 +82,18 @@ function Get-RevEncryptUserInfo{
 #WARNING: Verbose mode will display the clear-text password to the screen
 function Get-ClearTextUserInfo{
     Param (
-        [string]$verbose
-        [string]$DChostname
-        $userObjects
-    }
-    
-    ForEach-Object ($user in $AllUsers){
-        $repluser = Get-ADReplAccount -SamAccountName $i.samaccountname -Server $DChostname 
-        $policy = Get-ADUserResultantPasswordPolicy -Identity $i
+        [string]$verbose 
+    )
+    Write-Host "`nSearching for User Accounts With Clear-Text Password:" -BackgroundColor Gray
+    ForEach ($user in $AllUsers){
+        $repluser = Get-ADReplAccount -SamAccountName $user.samaccountname -Server $DChostname 
+        $policy = Get-ADUserResultantPasswordPolicy -Identity $user
         $password = $repluser.SupplementalCredentials
         #Only report on accounts that have a ClearText password
         if($null -ne $password.ClearText){
-            Write-Host $i.SamAccountName "has a clear-text password."
+            Write-Host $user.SamAccountName "has a clear-text password." -ForegroundColor Red
             #Attempt to determine why a Clear-Text password is set
-            if ($i.AllowReversiblePasswordEncryption){
+            if ($user.AllowReversiblePasswordEncryption){
                 Write-Host "UAC is configured on this account to directly allow reverse encryption."
                 Write-Host "Remove the check-box on this account and change the account password."
             } elseif ($policy.ReversibleEncryptionEnabled){
@@ -105,11 +105,13 @@ function Get-ClearTextUserInfo{
             }
 
             if ($verbose){
+                Write-Host "`n****Verbose Mode Enabled****`n"
                 Write-Host "Clear Text Password:" $password.ClearText
+                Write-Host "--------------------`n"
                 Write-Host "User account control:" $replUser.useraccountcontrol
-                Write-Host "AD Attributes for user object:"
-                $i | Format-List samaccountname, whenChanged, PasswordLastSet, PasswordNeverExpires, AllowReversiblePasswordEncryption
-                Write-Host "FGPP applied to this account: "
+                Write-Host "AD Attributes for user object:" -BackgroundColor Gray
+                $user | Format-List samaccountname, whenChanged, PasswordLastSet, PasswordNeverExpires, AllowReversiblePasswordEncryption
+                Write-Host "FGPP applied to this account: " -BackgroundColor Gray
                 $policy
             }
         }
@@ -118,12 +120,12 @@ function Get-ClearTextUserInfo{
 
 #### Set the variables
 $verboseMode = $false #Change this to true to globally enable verbose mode
-$DChostname = localhost #Change this if not running directly on DC
+$DChostname = "localhost" #Change this if not running directly on DC
 
 #### Call the functions
 Get-DDPPInfo -verbose $verboseMode
 Get-FGPPInfo -verbose $verboseMode
 Get-RevEncryptUserInfo -verbose $verboseMode
-Get-ClearTextUserInfo -verbose $verboseMode -DChostname $DChostname
+Get-ClearTextUserInfo -verbose $verboseMode
 
 #Fin
