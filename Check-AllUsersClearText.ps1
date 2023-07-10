@@ -5,9 +5,12 @@ AUTHOR EMAIL: Brandon.Colley@trimarcsecurity.com
 DESCRIPTION:
 This script identifies all accounts in a domain utilizing clear-text passwords via the "Store Password using Reversible Encryption".
 It reports on current state of the environment, identifying GPO, FGPP, and UAC settings that configure Reversible Encryption.
+Using DSInternals, the script checks every user account for the existence of a clear-text password and identifies the setting(s) allowing this misconfiguration.
+For more information on reverse encryption and this script visit: <link>
 
-https://github.com/MichaelGrafnetter/DSInternals
 #Requires -Modules DSInternals
+https://github.com/MichaelGrafnetter/DSInternals
+
 #>
 
 #Variable passed to functions that require domain user information.
@@ -16,7 +19,7 @@ $AllUsers = Get-ADUser -Filter * -Properties whenChanged, PasswordLastSet, Passw
 #Checks the Default Domain Password Policy GPO for password configuration that enables Reversible Encryption domain-wide.
 function Get-DDPPInfo{
     Param (
-        [string]$verbose
+        [boolean]$verbose
     )
     Write-Host "`nDefault Domain GPO Password Policy Information:" -BackgroundColor Gray
     #Export the Default Domain Policy GPO, injest into xml object to retrieve Modified timestamp and Password Policy data
@@ -26,7 +29,7 @@ function Get-DDPPInfo{
     Remove-Item .\DDPP.xml
         
     if ((Get-ADDefaultDomainPasswordPolicy).ReversibleEncryptionEnabled -eq $true){
-        Write-Host "Critical: Reverse Encryption is enabled Domain Wide. This impacts all users regardless of FGPP or UAC." -ForegroundColor Red
+        Write-Host "CRITICAL: Reverse Encryption is enabled Domain Wide. This impacts all users regardless of FGPP or UAC." -ForegroundColor Red
             }
     else{
         Write-Host "Reverse Encryption is properly disabled in Domain Password Policy" -ForegroundColor Green
@@ -41,7 +44,7 @@ function Get-DDPPInfo{
 #Checks all Fine-Grained Password Policies for password configuration that enables Reversible Encryption applied to user accounts or groups.
 function Get-FGPPInfo{
     Param (
-        [string]$verbose
+        [boolean]$verbose
     )
     Write-Host "`nFine-Grained Password Policy Information:" -BackgroundColor Gray
     $FGPPData = Get-ADFineGrainedPasswordPolicy -Filter * -Properties whenChanged
@@ -65,7 +68,7 @@ function Get-FGPPInfo{
 #Counts the number of users directly configured to allow Reversible Encryption.
 function Get-RevEncryptUserInfo{
     Param (
-        [string]$verbose
+        [boolean]$verbose
     )
     Write-Host "`nGathering User Account Data:" -BackgroundColor Gray
     $ReverseUsers = $AllUsers | Where-Object {$_.AllowReversiblePasswordEncryption -eq $true}
@@ -82,7 +85,7 @@ function Get-RevEncryptUserInfo{
 #WARNING: Verbose mode will display the clear-text password to the screen
 function Get-ClearTextUserInfo{
     Param (
-        [string]$verbose 
+        [boolean]$verbose 
     )
     Write-Host "`nSearching for User Accounts With Clear-Text Password:" -BackgroundColor Gray
     ForEach ($user in $AllUsers){
@@ -96,10 +99,12 @@ function Get-ClearTextUserInfo{
             if ($user.AllowReversiblePasswordEncryption){
                 Write-Host "UAC is configured on this account to directly allow reverse encryption."
                 Write-Host "Remove the check-box on this account and change the account password."
-            } elseif ($policy.ReversibleEncryptionEnabled){
+            } 
+            if ($policy.ReversibleEncryptionEnabled){
                 Write-Host "The " $policy.Name "FGPP is enforced on this account which allows reverse encryption."
                 Write-Host "Remove this policy or disable reversible encryption and change the account password." 
-            } else {
+            } 
+            if (!$user.AllowReversiblePasswordEncryption -and !$policy.ReversibleEncryptionEnabled){
                 Write-Host "Nothing is currently enforcing reverse encryption. A prior setting or policy must have allowed this configuration."
                 Write-Host "Change the account password."
             }
@@ -119,13 +124,13 @@ function Get-ClearTextUserInfo{
 }
 
 #### Set the variables
-$verboseMode = $false #Change this to true to globally enable verbose mode
+$verboseMode = $false #Change this to true to globally enable verbose mode. Change per function below to run verbose individually. 
 $DChostname = "localhost" #Change this if not running directly on DC
 
 #### Call the functions
 Get-DDPPInfo -verbose $verboseMode
 Get-FGPPInfo -verbose $verboseMode
 Get-RevEncryptUserInfo -verbose $verboseMode
-Get-ClearTextUserInfo -verbose $verboseMode
+Get-ClearTextUserInfo -verbose $verboseMode #Setting this to true will display clear-text passwords.
 
 #Fin
