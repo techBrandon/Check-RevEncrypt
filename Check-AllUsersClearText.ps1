@@ -1,20 +1,25 @@
 <#.
 SCRIPTNAME: Check-AllUsersClearText.ps1
 AUTHOR: Brandon Colley
-AUTHOR EMAIL: Brandon.Colley@trimarcsecurity.com
+AUTHOR EMAIL: colleybrandon@pm.me
+UPDATED: 20250507
 DESCRIPTION:
 This script identifies all accounts in a domain utilizing clear-text passwords via the "Store Password using Reversible Encryption".
 It reports on current state of the environment, identifying GPO, FGPP, and UAC settings that configure Reversible Encryption.
 Using DSInternals, the script checks every user account for the existence of a clear-text password and identifies the setting(s) allowing this misconfiguration.
 For more information on reverse encryption and this script visit: <link>
-
-#Requires -Modules DSInternals
-https://github.com/MichaelGrafnetter/DSInternals
-
 #>
+#Requires -Modules DSInternals
+#https://github.com/MichaelGrafnetter/DSInternals
 
-#Variable passed to functions that require domain user information.
-$AllUsers = Get-ADUser -Filter * -Properties whenChanged, PasswordLastSet, PasswordNeverExpires, AllowReversiblePasswordEncryption
+####### UPDATE THESE VARIABLES #######
+$defaultDomainPolicy = "Default Domain Policy" # Update if you renamed the policy you use to configure the default password policy
+$verboseMode = $False # Change this to $True to globally enable verbose mode. Change in MAIN below to run verbose individually. 
+# NOTE: Changing verboseMode globally will display clear-text password information. It is recommended to run with $False first.
+$DChostname = "localhost" # Change this if not running directly on DC
+######################################
+
+####### FUNCTIONS #######
 
 #Checks the Default Domain Password Policy GPO for password configuration that enables Reversible Encryption domain-wide.
 function Get-DDPPInfo{
@@ -23,7 +28,8 @@ function Get-DDPPInfo{
     )
     Write-Host "`nDefault Domain GPO Password Policy Information:" -BackgroundColor Gray
     #Export the Default Domain Policy GPO, injest into xml object to retrieve Modified timestamp and Password Policy data
-    Get-GPOReport -Name "Default Domain Policy" -ReportType xml -Path DDPP.xml
+    Get-GPOReport -Name $defaultDomainPolicy -ReportType xml -Path DDPP.xml
+    Start-Sleep 5
     $temp = Get-Content .\DDPP.xml
     $xml = [xml]$temp
     Remove-Item .\DDPP.xml
@@ -54,6 +60,10 @@ function Get-FGPPInfo{
             $FGPPFound = $true
             Write-Host "The Policy: " $i.Name "Enables Reverse Encryption on: " $i.AppliesTo -ForegroundColor Red
         }
+        else{
+            Write-Host "The Policy: " $i.Name "is properly configured and applies to: " $i.AppliesTo -ForegroundColor Green
+        }
+        Write-Host $i.Name "was last Modified:" $i.whenChanged
     }
     if (!$FGPPFound){
         Write-Host "Reverse Encryption is properly disabled in All Fine-Grained Password Policies" -ForegroundColor Green
@@ -117,20 +127,17 @@ function Get-ClearTextUserInfo{
                 Write-Host "AD Attributes for user object:" -BackgroundColor Gray
                 $user | Format-List samaccountname, whenChanged, PasswordLastSet, PasswordNeverExpires, AllowReversiblePasswordEncryption
                 Write-Host "FGPP applied to this account: " -BackgroundColor Gray
-                $policy
+                $policy | Format-List
             }
         }
     }
 }
 
-#### Set the variables
-$verboseMode = $false #Change this to true to globally enable verbose mode. Change per function below to run verbose individually. 
-$DChostname = "localhost" #Change this if not running directly on DC
+# Variable passed to functions that require domain user information.
+$AllUsers = Get-ADUser -Filter * -Properties whenChanged, PasswordLastSet, PasswordNeverExpires, AllowReversiblePasswordEncryption
 
-#### Call the functions
+####### MAIN #######
 Get-DDPPInfo -verbose $verboseMode
 Get-FGPPInfo -verbose $verboseMode
 Get-RevEncryptUserInfo -verbose $verboseMode
 Get-ClearTextUserInfo -verbose $verboseMode #Setting this to true will display clear-text passwords.
-
-#Fin
