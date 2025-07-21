@@ -1,26 +1,26 @@
 Welcome!
 This repo contains a simple PowerShell script to report on all things reversible encryption. 
 
-If you didn't start there, see the companion article here:
+If you didn't start there, see the companion article [here](https://techbrandon.github.io/active%20directory/security/powershell/2025/07/10/modern-detection-of-reversible-encryption.html) for a write up of the problems this script aims to solve.
 
-Check-AllUsersClearText.ps1 run without adjustment will report on the Default Domain Policy, Fine-Grained Password Policies and User Account Configuration. This script will definitively detect all users in a domain that are configured with a clear-text password (reversible encryption).
+Running `Check-AllUsersClearText.ps1` without adjustment will report on the Default Domain Password Policy(DDPP), Fine-Grained Password Policies(FGPP) and User Account Configuration. This script will definitively detect all users in a domain that are configured with a clear-text password (reversible encryption).
 Specific details for each user or configuration found, including details of how to remediate, are written to the screen.
 
 Update 3 variables under certain conditions:
 
-$defaultDomainPolicy -- if you renamed the policy you use to configure the default password policy
+`$defaultDomainPolicy` -- if you renamed the policy used to configure the default password policy. By default, this is "Default Domain Policy".
 
-$verboseMode -- Change this to $True to globally enable verbose mode. Change in MAIN below to run verbose individually. NOTE: Changing verboseMode globally will display clear-text password information. It is recommended to run with $False first.
+`$verboseMode` -- Change this to $True to globally enable verbose mode. Change in MAIN below to run verbose individually. NOTE: Changing verboseMode globally will display clear-text password information. It is recommended to run with $False first.
 
-$DChostname -- if you are not running directly on the DC, update this to the DC you will be targeting
+`$DChostname` -- if you are not running directly on the DC, update this to the DC you will be targeting
 
-Reporting on clear-text password data requires the use of DSInternals. https://github.com/MichaelGrafnetter/DSInternals
-_This module may be detected as malware and will need to be excluded in order to complete successfully.
-I have no affiliation with DSInternals and take no responsibility for its use._
+Reporting on clear-text password data requires the use of [DSInternals](https://github.com/MichaelGrafnetter/DSInternals). `Install-Module DSInternals -Force`
+>This module may be detected as malware and will need to be excluded in order to complete successfully.
+I have no affiliation with DSInternals and take no responsibility for its use.
 
-The script must be run as a Domain Administrator in a Administrative PowerShell session.
+**The script must be run as a Domain Administrator in an Administrative PowerShell session.**
 
-**Sample output**
+Sample output:
 
 Non-Verbose Mode
 
