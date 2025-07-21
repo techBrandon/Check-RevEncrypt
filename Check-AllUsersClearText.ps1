@@ -1,13 +1,13 @@
 <#.
 SCRIPTNAME: Check-AllUsersClearText.ps1
-AUTHOR: Brandon Colley
-AUTHOR EMAIL: colleybrandon@pm.me
-UPDATED: 20250507
+AUTHOR: techBrandon
+AUTHOR EMAIL: bnrconsult@protonmail.com
+UPDATED: 20250721
 DESCRIPTION:
-This script identifies all accounts in a domain utilizing clear-text passwords via the "Store Password using Reversible Encryption".
-It reports on current state of the environment, identifying GPO, FGPP, and UAC settings that configure Reversible Encryption.
+This script identifies all accounts in a domain utilizing clear-text passwords via "Store Password using Reversible Encryption".
+It reports on current state of the environment, identifying DDPP, FGPP, and UAC settings that configure Reversible Encryption.
 Using DSInternals, the script checks every user account for the existence of a clear-text password and identifies the setting(s) allowing this misconfiguration.
-For more information on reverse encryption and this script visit: <link>
+For more information on reverse encryption and this script visit: https://techbrandon.github.io/active%20directory/security/powershell/2025/07/10/modern-detection-of-reversible-encryption.html
 #>
 #Requires -Modules DSInternals
 #https://github.com/MichaelGrafnetter/DSInternals
@@ -27,7 +27,7 @@ function Get-DDPPInfo{
         [boolean]$verbose
     )
     Write-Host "`nDefault Domain GPO Password Policy Information:" -BackgroundColor Gray
-    #Export the Default Domain Policy GPO, injest into xml object to retrieve Modified timestamp and Password Policy data
+    #Export the Default Domain Policy GPO, injest into xml object to retrieve Modified timestamp
     Get-GPOReport -Name $defaultDomainPolicy -ReportType xml -Path DDPP.xml
     Start-Sleep 5
     $temp = Get-Content .\DDPP.xml
@@ -98,6 +98,7 @@ function Get-ClearTextUserInfo{
         [boolean]$verbose 
     )
     Write-Host "`nSearching for User Accounts With Clear-Text Password:" -BackgroundColor Gray
+    $userCounter = 0
     ForEach ($user in $AllUsers){
         $repluser = Get-ADReplAccount -SamAccountName $user.samaccountname -Server $DChostname 
         $policy = Get-ADUserResultantPasswordPolicy -Identity $user
@@ -130,6 +131,12 @@ function Get-ClearTextUserInfo{
                 $policy | Format-List
             }
         }
+        else{
+            $userCounter++
+        }
+    }
+    if ($userCounter -eq $AllUsers.count){
+        Write-Host "None of the $userCounter users checked posess a reversibly encrypted password." -ForegroundColor Green
     }
 }
 
